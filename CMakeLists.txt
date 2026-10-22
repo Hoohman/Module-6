@@ -4,7 +4,7 @@ project(task-1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Boost REQUIRED COMPONENTS json)
+find_package(Boost 1.86 CONFIG REQUIRED COMPONENTS json)
 
 add_subdirectory(NetworkLogFilter)
 add_subdirectory(receiver_service)
