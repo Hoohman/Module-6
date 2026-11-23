@@ -1,5 +1,6 @@
 #include "receiver.h"
-#include "messageIdCache.h"
+#include "IncomingMessage.h"
+#include "MessageStore.h"
 #include <boost/asio.hpp>
 #include <boost/json.hpp>
 #include <chrono>
@@ -7,12 +8,28 @@
 #include <exception>
 #include <iostream>
 #include <optional>
+#include <pqxx/pqxx>
 #include <string>
 #include <utility>
 
 using boost::asio::ip::tcp;
 static constexpr std::size_t kMaxMessageSize = 1024;
 static constexpr std::chrono::seconds kMaxTimeLimit{10};
+
+IncomingMessage tag_invoke(boost::json::value_to_tag<IncomingMessage>,
+                           const boost::json::value& jv) {
+    const auto& obj = jv.as_object();
+
+    IncomingMessage im;
+    im.message_id = boost::json::value_to<std::string>(obj.at("message_id"));
+    im.source_service =
+        boost::json::value_to<std::string>(obj.at("source_service"));
+    im.timestamp_utc =
+        boost::json::value_to<std::string>(obj.at("timestamp_utc"));
+    im.payload = boost::json::value_to<std::string>(obj.at("payload"));
+
+    return im;
+}
 
 std::optional<std::string> validate_message(const boost::json::value& root) {
     if (!root.is_object()) {
@@ -90,7 +107,7 @@ boost::asio::awaitable<bool> send_ack(tcp::socket& socket,
 }
 
 boost::asio::awaitable<void> session(tcp::socket socket,
-                                     MessageIdCache& processed_ids) {
+                                     MessageStore& messageStore) {
     try {
         std::string received_string;
         auto dyn_buf =
@@ -125,28 +142,45 @@ boost::asio::awaitable<void> session(tcp::socket socket,
             std::string result = received_string.substr(0, length);
             dyn_buf.consume(length);
 
+            boost::json::value parsed;
+            IncomingMessage message;
             try {
-                boost::json::value parsed = boost::json::parse(result);
+                parsed = boost::json::parse(result);
                 if (auto error = validate_message(parsed)) {
                     std::cerr << "Protocol error: " << *error << '\n';
                     continue;
                 }
-                const auto& obj = parsed.get_object();
-                std::string message_id(
-                    obj.find("message_id")->value().as_string());
-
-                if (!processed_ids.contains(message_id)) {
-                    std::cout << "Received: " << parsed << '\n';
-                    processed_ids.remember(message_id);
-                }
-
-                if (!(co_await send_ack(socket, std::string(message_id)))) {
-                    break;
-                }
-
+                message = boost::json::value_to<IncomingMessage>(parsed);
             } catch (const std::exception& e) {
                 std::cerr << "Incorrect message format. Error code: "
                           << e.what() << '\n';
+                continue;
+            }
+
+            if (message.source_service == "control") {
+                if (message.payload == "stats") {
+                    messageStore.print_stats();
+                    if (!(co_await send_ack(socket, message.message_id))) {
+                        break;
+                    }
+                    continue;
+                }
+                std::cout << "Unknown control command\n";
+                continue;
+            }
+
+            try {
+                if (messageStore.store(message)) {
+                    std::cout << "[DB] Stored message id=" << message.message_id
+                              << '\n';
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[DB] Error storing message: " << e.what() << '\n';
+                break;
+            }
+
+            if (!(co_await send_ack(socket, message.message_id))) {
+                break;
             }
         }
     } catch (const std::exception& e) {
@@ -155,13 +189,13 @@ boost::asio::awaitable<void> session(tcp::socket socket,
 }
 
 boost::asio::awaitable<void> listener(tcp::acceptor acceptor,
-                                      MessageIdCache& processed_ids) {
+                                      MessageStore& messageStore) {
     for (;;) {
         tcp::socket socket =
             co_await acceptor.async_accept(boost::asio::use_awaitable);
 
         boost::asio::co_spawn(acceptor.get_executor(),
-                              session(std::move(socket), processed_ids),
+                              session(std::move(socket), messageStore),
                               boost::asio::detached);
     }
 }

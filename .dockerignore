@@ -1,0 +1,7 @@
+**
+!Dockerfile
+!CMakeLists.txt
+!NetworkLogFilter/
+!NetworkLogFilter/**
+!receiver_service/
+!receiver_service/**

@@ -14,8 +14,9 @@ static constexpr std::chrono::seconds kMaxTimeLimit{5};
 
 void tag_invoke(const boost::json::value_from_tag&, boost::json::value& jv,
                 const LogMessage& message) {
-    std::string time =
-        std::format("{:%Y-%m-%d %H:%M:%S}", message.timestamp_utc);
+    const auto timestamp =
+        std::chrono::floor<std::chrono::microseconds>(message.timestamp_utc);
+    std::string time = std::format("{:%Y-%m-%d %H:%M:%S}+00:00", timestamp);
 
     jv = {{"message_id", message.message_id},
           {"source_service", message.source_service},
