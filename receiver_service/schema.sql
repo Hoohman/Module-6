@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS messages (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    message_id UUID NOT NULL UNIQUE,
+    source_service TEXT NOT NULL,
+    timestamp_utc TIMESTAMPTZ NOT NULL,
+    payload TEXT NOT NULL,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

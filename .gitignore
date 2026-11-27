@@ -72,3 +72,4 @@ conan.lock
 *.dump
 .DS_Store
 Thumbs.db
+/.env

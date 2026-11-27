@@ -2,6 +2,7 @@
 #include "sender.h"
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <sstream>
@@ -45,6 +46,11 @@ boost::asio::awaitable<bool> run_client(NetworkClient& client,
         }
     }
 
+    if (!(co_await client.send_message("control", "stats"))) {
+        client.disconnect();
+        co_return false;
+    }
+
     client.disconnect();
     co_return true;
 }
@@ -53,7 +59,10 @@ int main() {
     std::cout << "Starting IPv4 Filter Service...\n";
 
     boost::asio::io_context io_context;
-    NetworkClient client(io_context, "127.0.0.1", "30303");
+    const char* receiver_host = std::getenv("RECEIVER_HOST");
+    NetworkClient client(
+        io_context,
+        receiver_host && *receiver_host ? receiver_host : "127.0.0.1", "30303");
 
     std::string input_data = "192.168.0.5 - GET /\n"
                              "10.0.0.1 - POST /login\n"
